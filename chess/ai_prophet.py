@@ -1,110 +1,159 @@
 """
-PROPHET AI PERSONALITY - "The Grandmaster"
+PROPHET AI PERSONALITY - "The Grandmaster" (WITH CACHING)
 
 Game Theory Concept: Low Temporal Discount Rate (Long-term thinking)
 - Looks deeper into the game tree (higher DEPTH)
 - Values positional advantages heavily
-- Thinks 5-6 moves ahead vs 4
-- Less concerned with immediate material, more with long-term position
+- Thinks 5 moves ahead vs 4
+- Optimized for better performance
 
 Difficulty: Hard (performance concerns with depth=5)
-Implementation: Increased DEPTH + higher positional weight
+Implementation: Increased DEPTH + higher positional weight + move ordering
+ENGINE OPTIMIZATIONS: Iterative Deepening + Quiescence
 """
 
 import random
+import time
 from ai_personality_base import (
     CHECKMATE, STALEMATE, BASE_PIECE_SCORE, BASE_PIECE_POSITION_SCORES,
-    findRandomMoves
+    findRandomMoves, TranspositionTable, get_position_hash, order_moves
 )
 
-DEPTH = 5 
+DEPTH = 5
+TIME_LIMIT = 3.0
 nextMove = None
 
-# Same piece values as standard (material is standard)
-pieceScore = BASE_PIECE_SCORE.copy()
+tt = TranspositionTable()
 
-# Use base position scores
+pieceScore = BASE_PIECE_SCORE.copy()
 piecePositionScores = BASE_PIECE_POSITION_SCORES.copy()
 
-# PROPHET EVALUATION FUNCTION
+# EVALUATION
 def scoreBoard(gs):
-
-    # Check for game-ending positions
     if gs.checkmate:
         if gs.whiteToMove:
             gs.checkmate = False
-            return -CHECKMATE  # Black wins
+            return -CHECKMATE
         else:
             gs.checkmate = False
-            return CHECKMATE  # White wins
+            return CHECKMATE
     elif gs.stalemate:
         return STALEMATE
 
     score = 0
     
-    # Determine which color we're playing as
-    SET_WHITE_AS_BOT = 1 if gs.whiteToMove else -1
-    
-    # Evaluate each piece on the board
-    for row in range(len(gs.board)):
-        for col in range(len(gs.board[row])):
+    for row in range(8):
+        for col in range(8):
             square = gs.board[row][col]
             if square != "--":
                 piecePositionScore = 0
                 
-                # Get position score (piece-square table value)
                 if square[1] != "K":
                     if square[1] == "p":
                         piecePositionScore = piecePositionScores[square][row][col]
                     else:
                         piecePositionScore = piecePositionScores[square[1]][row][col]
                 
-                # Calculate score based on color
-                # Prophet values piece placement 3x more than base AI
+                # Prophet: 3x position weight
                 if square[0] == 'w':
-                    score += pieceScore[square[1]] + piecePositionScore * 0.3  # TRIPLED weight!
+                    score += pieceScore[square[1]] + piecePositionScore * 0.3
                 elif square[0] == 'b':
                     score -= pieceScore[square[1]] + piecePositionScore * 0.3
     
     return score
 
-# SEARCH ALGORITHM (same as original NegaMax with Alpha-Beta)
-def findMoveNegaMaxAlphaBeta(gs, validMoves, depth, alpha, beta, turnMultiplier):
-    global nextMove
-    if depth == 0:
-        return turnMultiplier * scoreBoard(gs)
-
-    maxScore = -CHECKMATE
-    for move in validMoves:
+# QUIESCENCE SEARCH
+def quiescence(gs, alpha, beta, turnMultiplier):
+    stand_pat = turnMultiplier * scoreBoard(gs)
+    
+    if stand_pat >= beta:
+        return beta
+    if alpha < stand_pat:
+        alpha = stand_pat
+    
+    moves = gs.getValidMoves()
+    captures = [m for m in moves if m.pieceCaptured != '--']
+    
+    for move in captures:
         gs.makeMove(move)
-        nextMoves = gs.getValidMoves()
-        score = -findMoveNegaMaxAlphaBeta(gs, nextMoves, depth-1, -beta, -alpha, -turnMultiplier)
+        score = -quiescence(gs, -beta, -alpha, -turnMultiplier)
+        gs.undoMove()
+        
+        if score >= beta:
+            return beta
+        if score > alpha:
+            alpha = score
+    
+    return alpha
+
+# SEARCH
+def negamax(gs, depth, alpha, beta, turnMultiplier, start_time):
+    if time.time() - start_time > TIME_LIMIT:
+        return 0
+    
+    if depth == 0:
+        return quiescence(gs, alpha, beta, turnMultiplier)
+    
+    pos_hash = get_position_hash(gs)
+    cached = tt.get(pos_hash, depth)
+    if cached is not None:
+        return cached
+    
+    moves = gs.getValidMoves()
+    ordered_moves = order_moves(moves, pieceScore)
+    
+    maxScore = -CHECKMATE
+    for move in ordered_moves:
+        gs.makeMove(move)
+        score = -negamax(gs, depth-1, -beta, -alpha, -turnMultiplier, start_time)
+        gs.undoMove()
         
         if score > maxScore:
             maxScore = score
-            if depth == DEPTH:
-                nextMove = move
-                print(f"Prophet: {move} score {score}")
-        
-        gs.undoMove()
         
         if maxScore > alpha:
             alpha = maxScore
         if alpha >= beta:
             break
     
+    tt.store(pos_hash, depth, maxScore)
     return maxScore
 
-# MAIN ENTRY POINT
+# ITERATIVE DEEPENING
 def findBestMove(gs, validMoves, returnQueue=None):
     global nextMove
     nextMove = None
-    random.shuffle(validMoves)
+    
+    start_time = time.time()
+    best_move = validMoves[0] if validMoves else None
     
     SET_WHITE_AS_BOT = 1 if gs.whiteToMove else -1
     
-    # Start the search with DEPTH=5
-    findMoveNegaMaxAlphaBeta(gs, validMoves, DEPTH, -CHECKMATE, CHECKMATE, SET_WHITE_AS_BOT)
+    # Iterative deepening: 1 → 2 → 3 → 4 → 5
+    for depth in range(1, DEPTH + 1):
+        if time.time() - start_time > TIME_LIMIT:
+            break
+        
+        ordered_moves = order_moves(validMoves, pieceScore)
+        best_score = -CHECKMATE
+        
+        for move in ordered_moves:
+            gs.makeMove(move)
+            score = -negamax(gs, depth-1, -CHECKMATE, CHECKMATE, -SET_WHITE_AS_BOT, start_time)
+            gs.undoMove()
+            
+            if time.time() - start_time > TIME_LIMIT:
+                break
+            
+            if score > best_score:
+                best_score = score
+                best_move = move
+        
+        nextMove = best_move
+        print(f"🔮 Prophet depth {depth}: {nextMove} → {best_score:.2f}")
+    
+    elapsed = time.time() - start_time
+    print(f"🔮 Final choice: {nextMove} ({elapsed:.2f}s)")
     
     if returnQueue is not None:
         returnQueue.put(nextMove)

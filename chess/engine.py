@@ -61,7 +61,6 @@ class GameState():
     def makeMove(self, move):
         if move.pieceCaptured[1] == 'K':
             self.checkmate = True
-            print("Checkmate! Game over.")
             return  # stop the move, or you could still make it to show the capture visually
         # If a king was captured, make the move normally and then mark checkmate.
         # Avoid returning early here because other state (moveLog, enpassant,
@@ -111,7 +110,6 @@ class GameState():
         # and moveLog have been updated.
         if king_was_captured:
             self.checkmate = True
-            print("Checkmate! Game over.")
         # update Log which side castle is possible
         self.updateCastleRights(move)
         self.castleRightsLog.append(castleRights(

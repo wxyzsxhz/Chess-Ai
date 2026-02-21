@@ -29,6 +29,16 @@ ANIM_PIECE = None
 ANIM_PROGRESS = 0
 ANIM_SPEED = 0.2
 
+# ===============================
+# SHARED MENU FONTS
+# ===============================
+p.font.init()
+MENU_TITLE_FONT = p.font.SysFont("Arial", 36, bold=True)
+MENU_SUBTITLE_FONT = p.font.SysFont("Arial", 25)
+MENU_TEXT_FONT = p.font.SysFont("Arial", 21)
+MENU_SMALL_FONT = p.font.SysFont("Arial", 16)
+
+START_BUTTON_Y = 490 # Start button location
 
 def load_images(piece_folder):
     """Load piece images from the specified folder."""
@@ -55,11 +65,39 @@ def draw_button(screen, rect, text, font, enabled=True):
         rect.y + rect.height//2 - label.get_height()//2
     ))
 
+def draw_confirm_button(screen, text, y, enabled):
+    font = p.font.SysFont("Arial", 24)
+    button_width = 120
+    button_height = 60
+
+    button_rect = p.Rect(
+        screen.get_width() // 2 - button_width // 2,
+        y,
+        button_width,
+        button_height
+    )
+
+    if enabled:
+        p.draw.rect(screen, p.Color("green"), button_rect)
+    else:
+        p.draw.rect(screen, p.Color("gray"), button_rect)
+
+    label = font.render(text, True, p.Color("white"))
+    screen.blit(
+        label,
+        (
+            button_rect.x + button_rect.width // 2 - label.get_width() // 2,
+            button_rect.y + button_rect.height // 2 - label.get_height() // 2
+        )
+    )
+
+    return button_rect
 
 def ask_theme(screen):
     """Theme selection screen."""
-    font = p.font.SysFont("Arial", 24)
-    title_font = p.font.SysFont("Arial", 36, bold=True)
+    font = MENU_TEXT_FONT
+    title_font = MENU_TITLE_FONT
+    subtitle_font = MENU_SUBTITLE_FONT
     
     selected_board = None
     selected_pieces = None
@@ -75,7 +113,7 @@ def ask_theme(screen):
         screen.blit(title, (screen.get_width()//2 - title.get_width()//2, 40))
         
         # Board themes section
-        board_title = font.render("Board Themes", True, p.Color("black"))
+        board_title = subtitle_font.render("Board Themes", True, p.Color("black"))
         screen.blit(board_title, (screen.get_width()//2 - board_title.get_width()//2, 120))
 
         # Board previews
@@ -113,7 +151,7 @@ def ask_theme(screen):
             board_rects.append((preview_rect, name))
         
         # Piece sets section (similar to board themes)
-        piece_title = font.render("Piece Sets", True, p.Color("black"))
+        piece_title = subtitle_font.render("Piece Sets", True, p.Color("black"))
         screen.blit(piece_title, (screen.get_width()//2 - piece_title.get_width()//2, 300))
 
         y = 340
@@ -146,18 +184,7 @@ def ask_theme(screen):
             piece_rects.append((preview_rect, name))
         
         #BUTTON
-        button_width, button_height = 120, 60
-        start_button = p.Rect(screen.get_width()//2 - button_width//2, y + preview_size + 60, 
-                     button_width, button_height)
-
-        if selected_board and selected_pieces:
-            p.draw.rect(screen, p.Color("green"), start_button)
-        else:
-            p.draw.rect(screen, p.Color("gray"), start_button)
-        
-        start_text = font.render("START", True, p.Color("white"))
-        screen.blit(start_text, (start_button.x + start_button.width//2 - start_text.get_width()//2,
-                                start_button.y + 15))
+        start_button = draw_confirm_button(screen, "CONFIRM", START_BUTTON_Y, selected_board and selected_pieces)
         
         p.display.flip()
         
@@ -185,21 +212,25 @@ def ask_bot_settings(screen):
     """Bot and board orientation selection screen."""
     btn_width, btn_height = 250, 60
     spacing = 40
+
     center_x = screen.get_width()//2
-    font = p.font.SysFont("Arial", 22)
-    title_font = p.font.SysFont("Arial", 28, bold=True)
+    total_width = btn_width * 3 + spacing * 2
+    start_x = (screen.get_width() - total_width) // 2
+
+    font = MENU_TEXT_FONT
+    title_font = MENU_TITLE_FONT
+    subtitle_font = MENU_SUBTITLE_FONT
     choosing = True
     
-    btn_pvp = p.Rect(center_x - btn_width - spacing//2, 120, btn_width, btn_height)
-    btn_pvb = p.Rect(center_x + spacing//2, 120, btn_width, btn_height)
+    btn_pvp = p.Rect(start_x, 180, btn_width, btn_height)
+    btn_pvb = p.Rect(start_x + btn_width + spacing, 180, btn_width, btn_height)
+    btn_bvb = p.Rect(start_x + (btn_width + spacing) * 2, 180, btn_width, btn_height)
 
-    btn_play_white = p.Rect(center_x - btn_width - spacing//2, 260, btn_width, btn_height)
-    btn_play_black = p.Rect(center_x + spacing//2, 260, btn_width, btn_height)
+    btn_play_white = p.Rect(center_x - btn_width - spacing//2, 340, btn_width, btn_height)
+    btn_play_black = p.Rect(center_x + spacing//2, 340, btn_width, btn_height)
 
-    btn_p1_white = p.Rect(center_x - btn_width - spacing//2, 260, btn_width, btn_height)
-    btn_p1_black = p.Rect(center_x + spacing//2, 260, btn_width, btn_height)
-
-    confirm_button = p.Rect(center_x - 100, 420, 200, 50)  # centered below
+    btn_p1_white = p.Rect(center_x - btn_width - spacing//2, 340, btn_width, btn_height)
+    btn_p1_black = p.Rect(center_x + spacing//2, 340, btn_width, btn_height)
 
     # State variables
     game_mode = None
@@ -215,9 +246,8 @@ def ask_bot_settings(screen):
         screen.blit(title, (screen.get_width()//2 - title.get_width()//2, 40))
         
         # Game Mode Selection
-        step1_text = font.render("Select Game Mode", True, p.Color("black"))
-        #screen.blit(step1_text, (50, 80))
-        screen.blit(step1_text, (screen.get_width()//2 - step1_text.get_width()//2, 90))
+        step1_text = subtitle_font.render("Select Game Mode", True, p.Color("black"))
+        screen.blit(step1_text, (screen.get_width()//2 - step1_text.get_width()//2, 140))
 
         # Player vs Player button
         if game_mode == 'pvp':
@@ -240,59 +270,69 @@ def ask_bot_settings(screen):
         pvb_text = font.render("Player vs Bot", True, p.Color("black"))
         screen.blit(pvb_text, (btn_pvb.x + btn_pvb.width//2 - pvb_text.get_width()//2, 
                                btn_pvb.y + 20))
+
+        # Bot vs Bot button
+        if game_mode == 'bvb':
+            p.draw.rect(screen, p.Color("darkblue"), btn_bvb)
+            p.draw.rect(screen, p.Color("blue"), btn_bvb, 4)
+        else:
+            p.draw.rect(screen, p.Color("lightgray"), btn_bvb)
+            p.draw.rect(screen, p.Color("black"), btn_bvb, 2)
+        bvb_text = font.render("Bot vs Bot", True, p.Color("black"))
+        screen.blit(bvb_text, (btn_bvb.x + btn_bvb.width//2 - bvb_text.get_width()//2, 
+                            btn_bvb.y + 20))
         
         # Color/Orientation Selection (conditional based on game mode)
         if game_mode:
-            step2_text = font.render("Select Color/Orientation", True, p.Color("black"))
-            #screen.blit(step2_text, (50, 220))
-            screen.blit(step2_text, (screen.get_width()//2 - step2_text.get_width()//2, 220))
+            if game_mode == 'pvb' or game_mode == 'pvp':  # Only show for PvB and PvP
+                step2_text = subtitle_font.render("Select Color/Orientation", True, p.Color("black"))
+                screen.blit(step2_text, (screen.get_width()//2 - step2_text.get_width()//2, 300))
 
-            
-            if game_mode == 'pvb':
-                # Play as White button
-                if player_color == 'white':
-                    p.draw.rect(screen, p.Color("lightgray"), btn_play_white)
-                    p.draw.rect(screen, p.Color("red"), btn_play_white, 4)
-                else:
-                    p.draw.rect(screen, p.Color("white"), btn_play_white)
-                    p.draw.rect(screen, p.Color("black"), btn_play_white, 2)
-                white_text = font.render("Play as White", True, p.Color("black"))
-                screen.blit(white_text, (btn_play_white.x + btn_play_white.width//2 - white_text.get_width()//2,
-                                        btn_play_white.y + 20))
+                if game_mode == 'pvb':
+                    # Play as White button
+                    if player_color == 'white':
+                        p.draw.rect(screen, p.Color("lightgray"), btn_play_white)
+                        p.draw.rect(screen, p.Color("red"), btn_play_white, 4)
+                    else:
+                        p.draw.rect(screen, p.Color("white"), btn_play_white)
+                        p.draw.rect(screen, p.Color("black"), btn_play_white, 2)
+                    white_text = font.render("Play as White", True, p.Color("black"))
+                    screen.blit(white_text, (btn_play_white.x + btn_play_white.width//2 - white_text.get_width()//2,
+                                            btn_play_white.y + 20))
+                    
+                    # Play as Black button
+                    if player_color == 'black':
+                        p.draw.rect(screen, p.Color("dimgray"), btn_play_black)
+                        p.draw.rect(screen, p.Color("red"), btn_play_black, 4)
+                    else:
+                        p.draw.rect(screen, p.Color("black"), btn_play_black)
+                        p.draw.rect(screen, p.Color("gray"), btn_play_black, 2)
+                    black_text = font.render("Play as Black", True, p.Color("white"))
+                    screen.blit(black_text, (btn_play_black.x + btn_play_black.width//2 - black_text.get_width()//2,
+                                            btn_play_black.y + 20))
                 
-                # Play as Black button
-                if player_color == 'black':
-                    p.draw.rect(screen, p.Color("dimgray"), btn_play_black)
-                    p.draw.rect(screen, p.Color("red"), btn_play_black, 4)
-                else:
-                    p.draw.rect(screen, p.Color("black"), btn_play_black)
-                    p.draw.rect(screen, p.Color("gray"), btn_play_black, 2)
-                black_text = font.render("Play as Black", True, p.Color("white"))
-                screen.blit(black_text, (btn_play_black.x + btn_play_black.width//2 - black_text.get_width()//2,
-                                        btn_play_black.y + 20))
-            
-            elif game_mode == 'pvp':
-                # Player 1 (White) at bottom
-                if not flip_board:
-                    p.draw.rect(screen, p.Color("lightgray"), btn_p1_white)
-                    p.draw.rect(screen, p.Color("red"), btn_p1_white, 4)
-                else:
-                    p.draw.rect(screen, p.Color("white"), btn_p1_white)
-                    p.draw.rect(screen, p.Color("black"), btn_p1_white, 2)
-                p1w_text = font.render("White at Bottom", True, p.Color("black"))
-                screen.blit(p1w_text, (btn_p1_white.x + btn_p1_white.width//2 - p1w_text.get_width()//2,
-                                       btn_p1_white.y + 20))
-                
-                # Player 2 (Black) at bottom
-                if flip_board:
-                    p.draw.rect(screen, p.Color("dimgray"), btn_p1_black)
-                    p.draw.rect(screen, p.Color("red"), btn_p1_black, 4)
-                else:
-                    p.draw.rect(screen, p.Color("black"), btn_p1_black)
-                    p.draw.rect(screen, p.Color("gray"), btn_p1_black, 2)
-                p1b_text = font.render("Black at Bottom", True, p.Color("white"))
-                screen.blit(p1b_text, (btn_p1_black.x + btn_p1_black.width//2 - p1b_text.get_width()//2,
-                                       btn_p1_black.y + 20))
+                elif game_mode == 'pvp':
+                    # Player 1 (White) at bottom
+                    if not flip_board:
+                        p.draw.rect(screen, p.Color("lightgray"), btn_p1_white)
+                        p.draw.rect(screen, p.Color("red"), btn_p1_white, 4)
+                    else:
+                        p.draw.rect(screen, p.Color("white"), btn_p1_white)
+                        p.draw.rect(screen, p.Color("black"), btn_p1_white, 2)
+                    p1w_text = font.render("White at Bottom", True, p.Color("black"))
+                    screen.blit(p1w_text, (btn_p1_white.x + btn_p1_white.width//2 - p1w_text.get_width()//2,
+                                        btn_p1_white.y + 20))
+                    
+                    # Player 2 (Black) at bottom
+                    if flip_board:
+                        p.draw.rect(screen, p.Color("dimgray"), btn_p1_black)
+                        p.draw.rect(screen, p.Color("red"), btn_p1_black, 4)
+                    else:
+                        p.draw.rect(screen, p.Color("black"), btn_p1_black)
+                        p.draw.rect(screen, p.Color("gray"), btn_p1_black, 2)
+                    p1b_text = font.render("Black at Bottom", True, p.Color("white"))
+                    screen.blit(p1b_text, (btn_p1_black.x + btn_p1_black.width//2 - p1b_text.get_width()//2,
+                                        btn_p1_black.y + 20))
         
         # Confirm button
         can_confirm = False
@@ -300,15 +340,10 @@ def ask_bot_settings(screen):
             can_confirm = True
         elif game_mode == 'pvb' and player_color:
             can_confirm = True
+        elif game_mode == 'bvb':
+            can_confirm = True
         
-        if can_confirm:
-            p.draw.rect(screen, p.Color("green"), confirm_button)
-        else:
-            p.draw.rect(screen, p.Color("gray"), confirm_button)
-        
-        confirm_text = font.render("CONFIRM", True, p.Color("white"))
-        screen.blit(confirm_text, (confirm_button.x + confirm_button.width//2 - confirm_text.get_width()//2,
-                                   confirm_button.y + 15))
+        confirm_button = draw_confirm_button(screen, "CONFIRM", START_BUTTON_Y, can_confirm)
         
         p.display.flip()
         
@@ -328,6 +363,12 @@ def ask_bot_settings(screen):
                     game_mode = 'pvb'
                     player_color = None
                     flip_board = False  # Will be set based on player color
+                elif btn_bvb.collidepoint(e.pos):
+                    game_mode = 'bvb'
+                    player_color = None
+                    flip_board = False  
+                    white_bot = True
+                    black_bot = True
                 
                 # Color/Orientation selection
                 if game_mode == 'pvb':
@@ -354,13 +395,150 @@ def ask_bot_settings(screen):
     
     return white_bot, black_bot, flip_board
 
+def ask_bvb_personalities(screen):
+    """
+    Bot vs Bot personality selection - select both White and Black personalities.
+    """
+    from config import AI_PERSONALITIES
+    
+    font = MENU_TEXT_FONT
+    title_font = MENU_TITLE_FONT
+    desc_font = MENU_SMALL_FONT 
+    
+    white_personality = None
+    black_personality = None
+    
+    # Button dimensions
+    button_width = 220
+    button_height = 100
+    spacing = 15
+    cols = 2
+    rows = 2
+
+    section_gap = 60  # gap between white and black sections
+    section_width = cols * button_width + (cols - 1) * spacing
+    total_width = section_width * 2 + section_gap
+    left_margin = (screen.get_width() - total_width) // 2
+
+    # White section (left side)
+    white_start_x = left_margin
+    white_start_y = 185
+    
+    # Black section (right side)
+    black_start_x = left_margin + section_width + section_gap
+    black_start_y = 185
+        
+    while True:
+        screen.fill(p.Color("white"))
+        
+        # Main title
+        title = title_font.render("Select Personalities for Bots", True, p.Color("black"))
+        screen.blit(title, (screen.get_width()//2 - title.get_width()//2, 30))
+        
+        # Divider line between sections
+        divider_x = left_margin + section_width + section_gap // 2
+
+        # Section titles — centered over each grid
+        white_section_center = white_start_x + section_width // 2
+        black_section_center = black_start_x + section_width // 2
+
+        # Section titles
+        white_title = font.render("WHITE BOT", True, p.Color("black"))
+        screen.blit(white_title, (white_section_center - white_title.get_width()//2, 130))
+        
+        black_title = font.render("BLACK BOT", True, p.Color("black"))
+        screen.blit(black_title, (black_section_center - black_title.get_width()//2, 130))
+        
+        # Draw personality buttons
+        white_buttons = []
+        black_buttons = []
+        personalities = list(AI_PERSONALITIES.keys())
+        
+        for i, personality_name in enumerate(personalities):
+            row = i // 2
+            col = i % 2
+            
+            personality_data = AI_PERSONALITIES[personality_name]
+            
+            # White bot buttons (left side)
+            white_x = white_start_x + col * (button_width + spacing)
+            white_y = white_start_y + row * (button_height + spacing)
+            white_rect = p.Rect(white_x, white_y, button_width, button_height)
+            
+            if white_personality == personality_name:
+                p.draw.rect(screen, p.Color(*personality_data["color"]), white_rect)
+                p.draw.rect(screen, p.Color("gold"), white_rect, 5)
+            else:
+                color = personality_data["color"]
+                light_color = tuple(min(c + 80, 255) for c in color)
+                p.draw.rect(screen, p.Color(*light_color), white_rect)
+                p.draw.rect(screen, p.Color("black"), white_rect, 2)
+            
+            name_text = font.render(personality_name, True, p.Color("white"))
+            screen.blit(name_text, (white_x + button_width//2 - name_text.get_width()//2, white_y + 20))
+            
+            desc_text = desc_font.render(personality_data["description"], True, p.Color("white"))
+            screen.blit(desc_text, (white_x + button_width//2 - desc_text.get_width()//2, white_y + 50))
+            
+            white_buttons.append((white_rect, personality_name))
+            
+            # Black bot buttons (right side)
+            black_x = black_start_x + col * (button_width + spacing)
+            black_y = black_start_y + row * (button_height + spacing)
+            black_rect = p.Rect(black_x, black_y, button_width, button_height)
+            
+            if black_personality == personality_name:
+                p.draw.rect(screen, p.Color(*personality_data["color"]), black_rect)
+                p.draw.rect(screen, p.Color("gold"), black_rect, 5)
+            else:
+                color = personality_data["color"]
+                light_color = tuple(min(c + 80, 255) for c in color)
+                p.draw.rect(screen, p.Color(*light_color), black_rect)
+                p.draw.rect(screen, p.Color("black"), black_rect, 2)
+            
+            name_text = font.render(personality_name, True, p.Color("white"))
+            screen.blit(name_text, (black_x + button_width//2 - name_text.get_width()//2, black_y + 20))
+            
+            desc_text = desc_font.render(personality_data["description"], True, p.Color("white"))
+            screen.blit(desc_text, (black_x + button_width//2 - desc_text.get_width()//2, black_y + 50))
+            
+            black_buttons.append((black_rect, personality_name))
+        
+        confirm_button = draw_confirm_button(screen, "CONFIRM", START_BUTTON_Y, white_personality and black_personality)
+        
+        p.display.flip()
+        
+        # Event handling
+        for event in p.event.get():
+            if event.type == p.QUIT:
+                p.quit()
+                sys.exit()
+            
+            if event.type == p.MOUSEBUTTONDOWN:
+                pos = event.pos
+                
+                # Check white bot buttons
+                for button_rect, personality_name in white_buttons:
+                    if button_rect.collidepoint(pos):
+                        white_personality = personality_name
+                
+                # Check black bot buttons
+                for button_rect, personality_name in black_buttons:
+                    if button_rect.collidepoint(pos):
+                        black_personality = personality_name
+                
+                # Check confirm button
+                if confirm_button.collidepoint(pos) and white_personality and black_personality:
+                    return white_personality, black_personality
+
 def ask_ai_personality(screen):
     """AI Personality selection screen."""
     from config import AI_PERSONALITIES
     
-    font = p.font.SysFont("Arial", 20)
-    title_font = p.font.SysFont("Arial", 32, bold=True)
-    desc_font = p.font.SysFont("Arial", 16)
+    font = MENU_TEXT_FONT
+    title_font = MENU_TITLE_FONT
+    subtitle_font = MENU_SUBTITLE_FONT
+    desc_font = MENU_SMALL_FONT
     
     selected_personality = None
     
@@ -375,9 +553,7 @@ def ask_ai_personality(screen):
     total_height = rows*button_height + (rows-1)*spacing
 
     start_x = screen.get_width()//2 - total_width//2
-    start_y = screen.get_height()//2 - total_height//2  # vertical center
-
-    confirm_button = p.Rect(screen.get_width()//2 - 100, start_y + total_height + 40, 200, 50)
+    start_y = screen.get_height()//2 - total_height//2 - 35
     
     while True:
         screen.fill(p.Color("white"))
@@ -387,7 +563,7 @@ def ask_ai_personality(screen):
         screen.blit(title, (screen.get_width()//2 - title.get_width()//2, 40))
         
         # Subtitle
-        subtitle = font.render("Choose how the AI plays", True, p.Color("black"))
+        subtitle = subtitle_font.render("Choose how the AI plays", True, p.Color("black"))
         screen.blit(subtitle, (screen.get_width()//2 - subtitle.get_width()//2, 85))
         
         # Draw personality buttons in 2x2 grid
@@ -433,16 +609,8 @@ def ask_ai_personality(screen):
             
             personality_buttons.append((button_rect, personality_name))
         
-        # Draw confirm button
-        if selected_personality:
-            p.draw.rect(screen, p.Color("green"), confirm_button)
-        else:
-            p.draw.rect(screen, p.Color("gray"), confirm_button)
-        
-        confirm_text = font.render("CONFIRM", True, p.Color("white"))
-        screen.blit(confirm_text, (confirm_button.x + confirm_button.width//2 - confirm_text.get_width()//2,
-                                   confirm_button.y + 15))
-        
+        confirm_button = draw_confirm_button(screen, "CONFIRM", START_BUTTON_Y, selected_personality)
+
         p.display.flip()
         
         # Event handling
@@ -690,13 +858,24 @@ def set_flip_board(value):
 
 
 def draw_ai_debug_info(screen, gs, ai_personality, white_bot, black_bot,
-                       time_left=None, human_turn=False):
+                       time_left=None, human_turn=False, 
+                       white_ai_personality=None, black_ai_personality=None):
     """
     Draw AI evaluation debug info panel with timer on top, horizontally centered.
     Timer updates every frame for human turns.
     """
-
-    if not ai_personality and not human_turn:
+    # Determine which personality to display
+    current_personality = None
+    
+    if white_ai_personality and black_ai_personality:
+        # Bot vs Bot mode - show the bot whose turn it is
+        current_personality = white_ai_personality if gs.whiteToMove else black_ai_personality
+    elif ai_personality:
+        # Single bot mode
+        current_personality = ai_personality
+    
+    # If no bot is playing and it's not human turn, don't show anything
+    if not current_personality and not human_turn:
         return None
 
     try:
@@ -730,24 +909,24 @@ def draw_ai_debug_info(screen, gs, ai_personality, white_bot, black_bot,
             screen.blit(timer_text, (debug_rect.x + 10, debug_rect.y + 10))
 
         # --- AI info below timer ---
-        if ai_personality:
+        if current_personality:
             # Load AI evaluation
-            if ai_personality == "Fortress":
+            if current_personality == "Fortress":
                 import ai_fortress
                 raw_score = ai_fortress.scoreBoard(gs)
                 depth = ai_fortress.DEPTH
                 traits = ["🛡️ King Safety: HIGH", "♟️ Pawn Value: +30%"]
-            elif ai_personality == "Prophet":
+            elif current_personality == "Prophet":
                 import ai_prophet
                 raw_score = ai_prophet.scoreBoard(gs)
                 depth = ai_prophet.DEPTH
                 traits = ["🔮 Deep Thinking", "📍 Position: x3"]
-            elif ai_personality == "Gambler":
+            elif current_personality == "Gambler":
                 import ai_gambler
                 raw_score = getattr(ai_gambler, 'scoreBoard', lambda x: 0)(gs)
                 depth = getattr(ai_gambler, 'DEPTH', 4)
                 traits = ["🎲 Probabilistic", "⚔️ Aggressive"]
-            elif ai_personality == "Tactician":
+            elif current_personality == "Tactician":
                 import ai_tactician
                 raw_score = getattr(ai_tactician, 'scoreBoard', lambda x: 0)(gs)
                 depth = getattr(ai_tactician, 'DEPTH', 3)
@@ -764,7 +943,7 @@ def draw_ai_debug_info(screen, gs, ai_personality, white_bot, black_bot,
                 score = raw_score
 
             content_y = debug_rect.y + 30
-            title = bold_font.render(f"{ai_personality} AI", True, p.Color("darkblue"))
+            title = bold_font.render(f"{current_personality} AI", True, p.Color("darkblue"))
             screen.blit(title, (debug_rect.x + 10, content_y))
 
             depth_color = p.Color("purple") if depth >= 5 else (p.Color("red") if depth <= 3 else p.Color("blue"))
@@ -808,7 +987,7 @@ def draw_game_menu_buttons(screen, debug_rect):
     start_btn = p.Rect(x_start, y_start, button_width, button_height)
     quit_btn = p.Rect(x_start + button_width + spacing, y_start, button_width, button_height)
 
-    draw_button(screen, start_btn, "START", font, True)
+    draw_button(screen, start_btn, "RESTART", font, True)
     draw_button(screen, quit_btn, "QUIT", font, True)
 
     return start_btn, quit_btn

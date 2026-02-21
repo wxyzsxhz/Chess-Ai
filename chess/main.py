@@ -50,11 +50,6 @@ def animate_move(move, screen, board, clock, flip_board, sound_manager, light_co
         panel_color = BOARD_THEMES[selected_board]["panel"]
         p.draw.rect(screen, panel_color, p.Rect(BOARD_WIDTH, 0, MOVE_LOG_PANEL_WIDTH, BOARD_HEIGHT))
     
-        # for r in range(8):
-        #     for c in range(8):
-        #         color = light_color if (r + c) % 2 == 0 else dark_color
-        #         p.draw.rect(screen, color, p.Rect(c*SQ_SIZE, r*SQ_SIZE, SQ_SIZE, SQ_SIZE))
-
         # Draw captured piece if any
         if move.pieceCaptured != '--':
             capture_row = move.endRow
@@ -83,7 +78,6 @@ def main():
     p.init()
     total_width = BOARD_WIDTH + MOVE_LOG_PANEL_WIDTH
     screen = p.display.set_mode((total_width, BOARD_HEIGHT))
-    #screen = p.display.set_mode((BOARD_WIDTH + MOVE_LOG_PANEL_WIDTH, BOARD_HEIGHT))
     clock = p.time.Clock()
     move_log_font = p.font.SysFont("Times New Roman", 12, False, False)
     sound_manager = SoundManager()
@@ -100,8 +94,48 @@ def main():
     # NEW: Ask for AI personality if bot is playing
     ai_personality = None
     findBestMove = None  # Will hold the AI function
-    
-    if white_bot or black_bot:
+    white_ai_personality = None
+    black_ai_personality = None
+    findBestMove_white = None
+    findBestMove_black = None
+
+    if white_bot and black_bot:
+        # Bot vs Bot mode - ask for TWO personalities
+        from ui import ask_bvb_personalities
+
+        white_ai_personality, black_ai_personality = ask_bvb_personalities(screen)
+
+        # Load white bot
+        if white_ai_personality == "Fortress":
+            import ai_fortress
+            findBestMove_white = ai_fortress.findBestMove
+        elif white_ai_personality == "Prophet":
+            import ai_prophet
+            findBestMove_white = ai_prophet.findBestMove
+        elif white_ai_personality == "Gambler":
+            import ai_gambler
+            findBestMove_white = ai_gambler.findBestMove
+        elif white_ai_personality == "Tactician":
+            import ai_tactician
+            findBestMove_white = ai_tactician.findBestMove
+        
+        # Load black bot
+        if black_ai_personality == "Fortress":
+            import ai_fortress as ai_fortress_black
+            findBestMove_black = ai_fortress_black.findBestMove
+        elif black_ai_personality == "Prophet":
+            import ai_prophet as ai_prophet_black
+            findBestMove_black = ai_prophet_black.findBestMove
+        elif black_ai_personality == "Gambler":
+            import ai_gambler as ai_gambler_black
+            findBestMove_black = ai_gambler_black.findBestMove
+        elif black_ai_personality == "Tactician":
+            import ai_tactician as ai_tactician_black
+            findBestMove_black = ai_tactician_black.findBestMove
+        
+        print(f"✓ WHITE: {white_ai_personality} vs BLACK: {black_ai_personality}")
+
+    elif white_bot or black_bot:
         from ui import ask_ai_personality
         ai_personality = ask_ai_personality(screen)
         
@@ -163,6 +197,23 @@ def main():
         human_turn = (gs.whiteToMove and not white_bot) or \
              (not gs.whiteToMove and not black_bot)
 
+        # ===============================
+        # CHECK GAME OVER CONDITIONS FIRST
+        # ===============================
+        if not game_over:
+            # Check if game is over
+            if len(valid_moves) == 0:
+                game_over = True
+                if gs.checkmate:
+                    print(f"Checkmate! {'Black' if gs.whiteToMove else 'White'} wins!")
+                elif gs.stalemate:
+                    print("Stalemate!")
+            
+            # Check for draw by repetition
+            if draw_count == 1:
+                game_over = True
+                print("Draw by repetition!")
+
         for e in p.event.get():
             if e.type == p.QUIT:
                 p.quit()
@@ -213,13 +264,16 @@ def main():
                     suggestion_move = None
                     suggestion_requested = False
                     turn_start_time = p.time.get_ticks()
-
+                    position_history = ""
+                    previous_pos = ""
+                    count_moves = 0
+                    draw_count = 0
 
                 elif quit_btn and quit_btn.collidepoint(mouse_pos):
                     p.quit()
                     sys.exit()
 
-                # Board clicks
+                # Board clicks - ONLY if game is NOT over and it's human turn
                 elif not game_over and human_turn:
                     col = mouse_pos[0] // SQ_SIZE
                     row = mouse_pos[1] // SQ_SIZE
@@ -266,36 +320,35 @@ def main():
                         if not move_made:
                             player_clicks = [square_selected]
 
-                    
                 move_undone = False
 
-                # Display suggestion move if available (only for human turns)
-                if human_turn and suggestion_move is not None and not game_over:
-                    # Highlight the suggested move with a different color
-                    s = p.Surface((SQ_SIZE, SQ_SIZE))
-                    s.set_alpha(150)
-                    s.fill(p.Color("yellow"))
-                    
-                    # Highlight start square
-                    start_draw_row = 7 - suggestion_move.startRow if flip_board else suggestion_move.startRow
-                    start_draw_col = 7 - suggestion_move.startCol if flip_board else suggestion_move.startCol
-                    screen.blit(s, (start_draw_col * SQ_SIZE, start_draw_row * SQ_SIZE))
-                    
-                    # Highlight end square
-                    end_draw_row = 7 - suggestion_move.endRow if flip_board else suggestion_move.endRow
-                    end_draw_col = 7 - suggestion_move.endCol if flip_board else suggestion_move.endCol
-                    screen.blit(s, (end_draw_col * SQ_SIZE, end_draw_row * SQ_SIZE))
+            elif e.type == p.KEYDOWN:
+                if e.key == p.K_z and not game_over:  # Undo - only if game not over
+                    gs.undoMove()
+                    move_made = True
+                    animate = False
+                    game_over = False
+                    suggestion_move = None
+                    suggestion_requested = False
+                    move_undone = True
+                    turn_start_time = p.time.get_ticks()
 
-                # Check game over conditions
-                if game_over:
-                    if gs.checkmate:
-                        text = 'Black wins by checkmate' if gs.whiteToMove else 'White wins by checkmate'
-                    elif gs.stalemate:
-                        text = 'Stalemate'
-                    elif draw_count == 1:
-                        text = 'Draw due to repetition'
-                    draw_end_game_text(screen, text)
-                
+                elif e.key == p.K_r:  # Reset
+                    gs = GameState()
+                    valid_moves = gs.getValidMoves()
+                    square_selected = ()
+                    player_clicks = []
+                    move_made = False
+                    animate = False
+                    game_over = False
+                    suggestion_move = None
+                    suggestion_requested = False
+                    turn_start_time = p.time.get_ticks()
+                    position_history = ""
+                    previous_pos = ""
+                    count_moves = 0
+                    draw_count = 0
+
         # ===============================
         # UPDATE TIMER EVERY FRAME
         # ===============================
@@ -310,107 +363,122 @@ def main():
         # GAME LOGIC EVERY FRAME
         # ===============================
 
-        # AI move handling (for bot turns only)
+        # AI move handling (for bot turns only) - ONLY if game is NOT over
         if not game_over and not human_turn and not move_undone:
-                    if not ai_thinking:
-                        ai_thinking = True
-                        return_queue = Queue()
-                        move_finder_process = Process(target=findBestMove, 
-                                                    args=(gs, valid_moves, return_queue))
-                        move_finder_process.start()
-                    
-                    if not move_finder_process.is_alive():
-                        ai_move = return_queue.get()
-                        if ai_move is None:
-                            ai_move = findRandomMoves(valid_moves)
+            if not ai_thinking:
+                ai_thinking = True
+                return_queue = Queue()
+
+                # Choose correct AI based on turn
+                if white_bot and black_bot:
+                    # Bot vs Bot mode
+                    current_bot_func = findBestMove_white if gs.whiteToMove else findBestMove_black
+                else:
+                    # Single bot mode
+                    current_bot_func = findBestMove
+
+                move_finder_process = Process(target = current_bot_func, 
+                                            args=(gs, valid_moves, return_queue))
+                move_finder_process.start()
+            
+            if not move_finder_process.is_alive():
+                ai_move = return_queue.get()
+                if ai_move is None:
+                    ai_move = findRandomMoves(valid_moves)
+                
+                piece_captured = gs.board[ai_move.endRow][ai_move.endCol] != '--'
+                gs.makeMove(ai_move)
+                
+                if ai_move.isPawnPromotion:
+                    promotion = pawn_promotion_popup(screen, gs)
+                    gs.board[ai_move.endRow][ai_move.endCol] = ai_move.pieceMoved[0] + promotion
+                    sound_manager.play_promote()
+                    piece_captured = False
+                
+                if piece_captured or ai_move.isEnpassantMove:
+                    sound_manager.play_capture()
+                elif not ai_move.isPawnPromotion:
+                    sound_manager.play_move()
+                
+                ai_thinking = False
+                move_made = True
+                animate = True
+                square_selected = ()
+                player_clicks = []
                         
-                        piece_captured = gs.board[ai_move.endRow][ai_move.endCol] != '--'
-                        gs.makeMove(ai_move)
-                        
-                        if ai_move.isPawnPromotion:
-                            promotion = pawn_promotion_popup(screen, gs)
-                            gs.board[ai_move.endRow][ai_move.endCol] = ai_move.pieceMoved[0] + promotion
-                            sound_manager.play_promote()
-                            piece_captured = False
-                        
-                        if piece_captured or ai_move.isEnpassantMove:
-                            sound_manager.play_capture()
-                        elif not ai_move.isPawnPromotion:
-                            sound_manager.play_move()
-                        
-                        ai_thinking = False
-                        move_made = True
-                        animate = True
-                        square_selected = ()
-                        player_clicks = []
-                        
-        # Human player timer and suggestion system
+        # Human player timer and suggestion system - ONLY if game is NOT over
         if not game_over and human_turn and not move_undone:
-                    # At 15 seconds, start computing a suggestion move
-                    if time_left <= SUGGESTION_TIME and not suggestion_requested and suggestion_move is None:
-                        suggestion_requested = True
-                        suggestion_move = findRandomMoves(valid_moves) 
-                    
-                    # At 0 seconds, force the suggested move (or random if no suggestion)
-                    if time_left == 0:
-                        if suggestion_move is None:
-                            auto_move = findRandomMoves(valid_moves)
-                        else:
-                            auto_move = suggestion_move
-                        
-                        piece_captured = gs.board[auto_move.endRow][auto_move.endCol] != '--'
-                        gs.makeMove(auto_move)
-                        
-                        if auto_move.isPawnPromotion:
-                            gs.board[auto_move.endRow][auto_move.endCol] = auto_move.pieceMoved[0] + 'Q'
-                            sound_manager.play_promote()
-                            piece_captured = False
-                        
-                        if piece_captured or auto_move.isEnpassantMove:
-                            sound_manager.play_capture()
-                        elif not auto_move.isPawnPromotion:
-                            sound_manager.play_move()
-                        
-                        move_made = True
-                        animate = True
-                        square_selected = ()
-                        player_clicks = []
-                        suggestion_move = None
-                        suggestion_requested = False
+            # At 15 seconds, start computing a suggestion move
+            if time_left <= SUGGESTION_TIME and not suggestion_requested and suggestion_move is None:
+                suggestion_requested = True
+                suggestion_move = findRandomMoves(valid_moves) 
+            
+            # At 0 seconds, force the suggested move (or random if no suggestion)
+            if time_left == 0:
+                if suggestion_move is None:
+                    auto_move = findRandomMoves(valid_moves)
+                else:
+                    auto_move = suggestion_move
+                
+                piece_captured = gs.board[auto_move.endRow][auto_move.endCol] != '--'
+                gs.makeMove(auto_move)
+                
+                if auto_move.isPawnPromotion:
+                    gs.board[auto_move.endRow][auto_move.endCol] = auto_move.pieceMoved[0] + 'Q'
+                    sound_manager.play_promote()
+                    piece_captured = False
+                
+                if piece_captured or auto_move.isEnpassantMove:
+                    sound_manager.play_capture()
+                elif not auto_move.isPawnPromotion:
+                    sound_manager.play_move()
+                
+                move_made = True
+                animate = True
+                square_selected = ()
+                player_clicks = []
+                suggestion_move = None
+                suggestion_requested = False
                         
         # Update game state after move
         if move_made:
-                    
-                    # Draw detection
-                    if count_moves < 4:
-                        count_moves += 1
-                    if count_moves == 4:
-                        position_history += gs.getBoardString()
-                        if previous_pos == position_history:
-                            draw_count += 1
-                            position_history = ""
-                            count_moves = 0
-                        else:
-                            previous_pos = position_history
-                            position_history = ""
-                            count_moves = 0
-                            draw_count = 0
-                    
-                    if animate:
-                        animate_move(gs.moveLog[-1], screen, gs.board, clock, flip_board, sound_manager,
-                                LIGHT_SQUARE_COLOR, DARK_SQUARE_COLOR, selected_board)
-                    
-                    valid_moves = gs.getValidMoves()
-                    if len(valid_moves) == 0:
-                        game_over = True
-                    
-                    turn_start_time = p.time.get_ticks()
-                    suggestion_move = None
-                    suggestion_requested = False
+            # Draw detection
+            if count_moves < 4:
+                count_moves += 1
+            if count_moves == 4:
+                position_history += gs.getBoardString()
+                if previous_pos == position_history:
+                    draw_count += 1
+                    position_history = ""
+                    count_moves = 0
+                else:
+                    previous_pos = position_history
+                    position_history = ""
+                    count_moves = 0
+                    draw_count = 0
+            
+            if animate:
+                animate_move(gs.moveLog[-1], screen, gs.board, clock, flip_board, sound_manager,
+                        LIGHT_SQUARE_COLOR, DARK_SQUARE_COLOR, selected_board)
+            
+            # UPDATE VALID MOVES AFTER THE MOVE
+            valid_moves = gs.getValidMoves()
+            
+            # Check if game is over after the move
+            if len(valid_moves) == 0:
+                game_over = True
+                if gs.checkmate:
+                    print(f"Checkmate! {'Black' if gs.whiteToMove else 'White'} wins!")
+                elif gs.stalemate:
+                    print("Stalemate!")
+            
+            turn_start_time = p.time.get_ticks()
+            suggestion_move = None
+            suggestion_requested = False
 
-                    move_made = False
-                    animate = False
-                    move_undone = False
+            move_made = False
+            animate = False
+            move_undone = False
         
         # ===============================
         # DRAW GAME EVERY FRAME
@@ -427,19 +495,84 @@ def main():
 
         debug_rect = draw_ai_debug_info(
             screen, gs, ai_personality, white_bot, black_bot,
-            time_left=time_left, human_turn=human_turn
+            time_left=time_left, human_turn=human_turn,
+            white_ai_personality=white_ai_personality if white_bot and black_bot else None,
+            black_ai_personality=black_ai_personality if white_bot and black_bot else None
         )
 
         start_btn, quit_btn = draw_game_menu_buttons(screen, debug_rect)
 
+        # ===============================
+        # DRAW GAME OVER TEXT
+        # ===============================
+        if game_over:
+            if gs.checkmate:
+                # Determine who won
+                if gs.whiteToMove:
+                    # If it's white's turn but game is over, white is in checkmate -> black won
+                    winner = "Black"
+                else:
+                    # If it's black's turn but game is over, black is in checkmate -> white won
+                    winner = "White"
+                
+                # Customize message based on who the player is controlling
+                if (winner == "Black" and not white_bot and black_bot) or \
+                (winner == "White" and white_bot and not black_bot):
+                    # Player won (they are controlling the winning side)
+                    text = "You win by checkmate!"
+                elif (winner == "Black" and white_bot and not black_bot) or \
+                    (winner == "White" and not white_bot and black_bot):
+                    # Player lost (they are controlling the losing side)
+                    text = "You lose by checkmate!"
+                else:
+                    # Bot vs bot or unclear situation
+                    text = f'{winner} wins by checkmate!'
+                    
+            elif gs.stalemate:
+                text = 'Stalemate!'
+            elif draw_count == 1:
+                text = 'Draw by repetition!'
+            else:
+                text = 'Game Over!'
+            
+            # Draw semi-transparent overlay
+            overlay = p.Surface((BOARD_WIDTH, BOARD_HEIGHT))
+            overlay.set_alpha(128)
+            overlay.fill(p.Color("black"))
+            screen.blit(overlay, (0, 0))
+            
+            # Draw game over text
+            font = p.font.SysFont("Arial", 48, True, False)
+            text_obj = font.render(text, True, p.Color("white"))
+            text_rect = text_obj.get_rect(center=(BOARD_WIDTH // 2, BOARD_HEIGHT // 2))
+            
+            # Add shadow effect
+            shadow = font.render(text, True, p.Color("gray"))
+            shadow_rect = shadow.get_rect(center=(BOARD_WIDTH // 2 + 3, BOARD_HEIGHT // 2 + 3))
+            screen.blit(shadow, shadow_rect)
+            screen.blit(text_obj, text_rect)
+            
+            # Also show smaller instruction
+            small_font = p.font.SysFont("Arial", 20, False, False)
+            restart_text = small_font.render("Click START to play again", True, p.Color("white"))
+            restart_rect = restart_text.get_rect(center=(BOARD_WIDTH // 2, BOARD_HEIGHT // 2 + 50))
+            screen.blit(restart_text, restart_rect)
 
-        # if human_turn and not game_over:
-        #     timer_text = timer_font.render(
-        #         f"Time: {int(time_left)}s",
-        #         True,
-        #         p.Color("red") if time_left <= 5 else p.Color("black")
-        #     )
-        #     screen.blit(timer_text, (BOARD_WIDTH + 20, 20))
+        # Display suggestion move if available (only for human turns)
+        if human_turn and suggestion_move is not None and not game_over:
+            s = p.Surface((SQ_SIZE, SQ_SIZE))
+            s.set_alpha(128)  # Transparency
+            s.fill(p.Color('yellow'))  # Highlight color
+            
+            # Highlight start square
+            start_draw_row = 7 - suggestion_move.startRow if flip_board else suggestion_move.startRow
+            start_draw_col = 7 - suggestion_move.startCol if flip_board else suggestion_move.startCol
+            screen.blit(s, (start_draw_col * SQ_SIZE, start_draw_row * SQ_SIZE))
+                    
+            # Highlight end square
+            end_draw_row = 7 - suggestion_move.endRow if flip_board else suggestion_move.endRow
+            end_draw_col = 7 - suggestion_move.endCol if flip_board else suggestion_move.endCol
+            screen.blit(s, (end_draw_col * SQ_SIZE, end_draw_row * SQ_SIZE))
 
         p.display.flip()
         clock.tick(MAX_FPS)
