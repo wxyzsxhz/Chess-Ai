@@ -6,6 +6,7 @@ Game Theory Concept: High Temporal Discount Rate (Myopic/Present-biased)
 - Heavily weights immediate material gains
 - Underweights long-term positional advantages
 - Bonus for checks and immediate threats
+- Repetition detection - avoids draw loops
 
 Difficulty: Medium
 Implementation: Reduced depth + modified evaluation weights
@@ -24,6 +25,9 @@ from ai_personality_base import (
 DEPTH = 3  # LOWER DEPTH - Only looks 3 moves ahead (short-term focus!)
 nextMove = None
 
+# Game-level position history - tracks actual board positions
+gameHistory = {}
+
 # SAME piece values as base (material-focused)
 pieceScore = BASE_PIECE_SCORE.copy()
 
@@ -32,6 +36,22 @@ piecePositionScores = BASE_PIECE_POSITION_SCORES.copy()
 
 # CAPTURE MULTIPLIER - Captured pieces worth MORE
 CAPTURE_BONUS = 1.5
+
+# ============================================================================
+# BOARD KEY FUNCTION
+# ============================================================================
+
+def _board_key(gs):
+    """Canonical position key including all draw-relevant state."""
+    return (
+        str(gs.board),
+        gs.whiteToMove,
+        gs.whiteCastleKingside,
+        gs.whiteCastleQueenside,
+        gs.blackCastleKingside,
+        gs.blackCastleQueenside,
+        gs.enpasantPossible,
+    )
 
 # ============================================================================
 # HELPER FUNCTION - Check if King is in Check
@@ -108,23 +128,44 @@ def scoreBoard(gs):
     return score
 
 # ============================================================================
-# SEARCH ALGORITHM (same as original NegaMax with Alpha-Beta)
+# SEARCH ALGORITHM with Repetition Detection
 # ============================================================================
 
-def findMoveNegaMaxAlphaBeta(gs, validMoves, depth, alpha, beta, turnMultiplier):
+def findMoveNegaMaxAlphaBeta(gs, validMoves, depth, alpha, beta, turnMultiplier, search_history=None):
     """
-    NegaMax search with alpha-beta pruning.
+    NegaMax search with alpha-beta pruning and repetition detection.
     Uses Tactician scoreBoard() function for evaluation.
     """
     global nextMove
+    
+    if search_history is None:
+        search_history = {}
+    
+    # Get board key for repetition detection
+    rep_key = _board_key(gs)
+    
+    # ---- REPETITION DETECTION ----
+    game_count = gameHistory.get(rep_key, 0)
+    search_count = search_history.get(rep_key, 0)
+    total_count = game_count + search_count
+    
+    if total_count >= 2:
+        # This position has been seen twice already - third time is a draw
+        # Return 0 to discourage repetition
+        return 0
+    
     if depth == 0:
         return turnMultiplier * scoreBoard(gs)
 
     maxScore = -CHECKMATE
+    
+    # Mark current position as visited in search path
+    search_history[rep_key] = search_history.get(rep_key, 0) + 1
+    
     for move in validMoves:
         gs.makeMove(move)
         nextMoves = gs.getValidMoves()
-        score = -findMoveNegaMaxAlphaBeta(gs, nextMoves, depth-1, -beta, -alpha, -turnMultiplier)
+        score = -findMoveNegaMaxAlphaBeta(gs, nextMoves, depth-1, -beta, -alpha, -turnMultiplier, search_history)
         
         if score > maxScore:
             maxScore = score
@@ -138,10 +179,13 @@ def findMoveNegaMaxAlphaBeta(gs, validMoves, depth, alpha, beta, turnMultiplier)
         if alpha >= beta:
             break
     
+    # Unwind search-path counter
+    search_history[rep_key] -= 1
+    
     return maxScore
 
 # ============================================================================
-# MAIN ENTRY POINT - WITH CAPTURE BONUS
+# MAIN ENTRY POINT - WITH CAPTURE BONUS AND REPETITION DETECTION
 # ============================================================================
 
 def findBestMove(gs, validMoves, returnQueue=None):
@@ -151,6 +195,7 @@ def findBestMove(gs, validMoves, returnQueue=None):
     TACTICIAN SPECIAL: 
     - Looks only 3 moves ahead (short-term thinking)
     - Overvalues captures by 1.5x
+    - Avoids repetition
     
     Args:
         gs: GameState object
@@ -160,9 +205,13 @@ def findBestMove(gs, validMoves, returnQueue=None):
     Returns:
         Move: The best move found
     """
-    global nextMove
+    global nextMove, gameHistory
     nextMove = None
     random.shuffle(validMoves)
+    
+    # Record current position in game history
+    key = _board_key(gs)
+    gameHistory[key] = gameHistory.get(key, 0) + 1
     
     SET_WHITE_AS_BOT = 1 if gs.whiteToMove else -1
     
@@ -172,14 +221,22 @@ def findBestMove(gs, validMoves, returnQueue=None):
     for move in validMoves:
         gs.makeMove(move)
         nextMoves = gs.getValidMoves()
-        score = -findMoveNegaMaxAlphaBeta(gs, nextMoves, DEPTH-1, -CHECKMATE, CHECKMATE, -SET_WHITE_AS_BOT)
         
-        # TACTICIAN SPECIAL: Bonus for captures!
-        if move.pieceCaptured != '--':
-            captured_value = pieceScore[move.pieceCaptured[1]]
-            capture_bonus = captured_value * (CAPTURE_BONUS - 1.0)  # Extra 0.5x value
-            score += capture_bonus
-            print(f"  💥 Capture bonus for {move}: +{capture_bonus:.2f}")
+        # Check if this move leads to a repeated position
+        next_key = _board_key(gs)
+        if gameHistory.get(next_key, 0) >= 2:
+            # This move would lead to a draw by repetition - penalize it
+            score = -1000
+            print(f"  ⚠️ Avoiding repetition: {move}")
+        else:
+            score = -findMoveNegaMaxAlphaBeta(gs, nextMoves, DEPTH-1, -CHECKMATE, CHECKMATE, -SET_WHITE_AS_BOT, search_history={})
+            
+            # TACTICIAN SPECIAL: Bonus for captures!
+            if move.pieceCaptured != '--':
+                captured_value = pieceScore[move.pieceCaptured[1]]
+                capture_bonus = captured_value * (CAPTURE_BONUS - 1.0)  # Extra 0.5x value
+                score += capture_bonus
+                print(f"  💥 Capture bonus for {move}: +{capture_bonus:.2f}")
         
         move_scores.append((move, score))
         gs.undoMove()
@@ -194,10 +251,18 @@ def findBestMove(gs, validMoves, returnQueue=None):
     for i, (move, score) in enumerate(move_scores[:3]):
         marker = "✓ CHOSEN" if i == 0 else ""
         capture_marker = "💥" if move.pieceCaptured != '--' else ""
-        print(f"  {i+1}. {move} → {score:.2f} {capture_marker} {marker}")
+        repetition_marker = "⚠️" if score < -500 else ""
+        print(f"  {i+1}. {move} → {score:.2f} {capture_marker} {repetition_marker} {marker}")
     print()
     
     if returnQueue is not None:
         returnQueue.put(nextMove)
     else:
         return nextMove
+
+
+def notify_undo(gs):
+    """Call this when a move is undone so gameHistory stays accurate."""
+    key = _board_key(gs)
+    if gameHistory.get(key, 0) > 0:
+        gameHistory[key] -= 1

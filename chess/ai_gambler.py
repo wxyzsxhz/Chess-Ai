@@ -8,10 +8,9 @@ ENGINE OPTIMIZATIONS:
 ✅ Move Ordering (captures first)
 ✅ Killer Move Heuristic
 ✅ Transposition Table Cache
+✅ Repetition Detection - prevents draws
 ✅ Only ONE deep search at root
 ✅ Gambler randomness among top moves
-
-This is the fastest strong Gambler personality.
 """
 
 import random
@@ -27,6 +26,9 @@ from ai_personality_base import (
 
 DEPTH = 4
 nextMove = None
+
+# Game-level position history - tracks actual board positions
+gameHistory = {}
 
 pieceScore = {
     "K": 0,
@@ -50,6 +52,23 @@ transTable = {}
 
 # Killer Moves (one per depth)
 killerMoves = [[None, None] for _ in range(DEPTH + 1)]
+
+
+# ============================================================================
+# BOARD KEY FUNCTION
+# ============================================================================
+
+def _board_key(gs):
+    """Canonical position key including all draw-relevant state."""
+    return (
+        str(gs.board),
+        gs.whiteToMove,
+        gs.whiteCastleKingside,
+        gs.whiteCastleQueenside,
+        gs.blackCastleKingside,
+        gs.blackCastleQueenside,
+        gs.enpasantPossible,
+    )
 
 
 # ============================================================================
@@ -122,15 +141,30 @@ def orderMoves(moves, depth):
 
 
 # ============================================================================
-# NEGAMAX + ALPHA-BETA + CACHE + KILLER
+# NEGAMAX + ALPHA-BETA + CACHE + KILLER + REPETITION DETECTION
 # ============================================================================
 
-def findMoveNegaMaxAlphaBeta(gs, validMoves, depth, alpha, beta, turnMultiplier):
+def findMoveNegaMaxAlphaBeta(gs, validMoves, depth, alpha, beta, turnMultiplier, search_history=None):
     global nextMove
 
-    # ---- TRANSPOSITION KEY ----
-    boardKey = str(gs.board) + str(gs.whiteToMove)
+    if search_history is None:
+        search_history = {}
 
+    # ---- BOARD KEY FOR CACHE AND REPETITION ----
+    boardKey = str(gs.board) + str(gs.whiteToMove)
+    rep_key = _board_key(gs)
+
+    # ---- REPETITION DETECTION ----
+    game_count = gameHistory.get(rep_key, 0)
+    search_count = search_history.get(rep_key, 0)
+    total_count = game_count + search_count
+
+    if total_count >= 2:
+        # This position has been seen twice already - third time is a draw
+        # Return 0 to discourage repetition
+        return 0
+
+    # ---- TRANSPOSITION TABLE ----
     if boardKey in transTable:
         storedDepth, storedScore = transTable[boardKey]
         if storedDepth >= depth:
@@ -145,6 +179,9 @@ def findMoveNegaMaxAlphaBeta(gs, validMoves, depth, alpha, beta, turnMultiplier)
     # ---- ORDER MOVES ----
     validMoves = orderMoves(validMoves, depth)
 
+    # Mark current position as visited in search path
+    search_history[rep_key] = search_history.get(rep_key, 0) + 1
+
     for move in validMoves:
 
         gs.makeMove(move)
@@ -156,7 +193,8 @@ def findMoveNegaMaxAlphaBeta(gs, validMoves, depth, alpha, beta, turnMultiplier)
             depth - 1,
             -beta,
             -alpha,
-            -turnMultiplier
+            -turnMultiplier,
+            search_history
         )
 
         gs.undoMove()
@@ -180,6 +218,9 @@ def findMoveNegaMaxAlphaBeta(gs, validMoves, depth, alpha, beta, turnMultiplier)
 
             break
 
+    # Unwind search-path counter
+    search_history[rep_key] -= 1
+
     # ---- STORE IN CACHE ----
     transTable[boardKey] = (depth, maxScore)
 
@@ -187,21 +228,19 @@ def findMoveNegaMaxAlphaBeta(gs, validMoves, depth, alpha, beta, turnMultiplier)
 
 
 # ============================================================================
-# MAIN GAMBLER MOVE (FAST ROOT ONLY) - FIXED VERSION
+# MAIN GAMBLER MOVE (FAST ROOT ONLY)
 # ============================================================================
 
 def findBestMove(gs, validMoves, returnQueue=None):
     """
-    Ultimate Fast Gambler (FIXED):
-
-    ✅ Depth 4 AlphaBeta Search ONCE
-    ✅ Always returns a real move
-    ✅ Randomness only among top candidates
-    ✅ Handles cases with fewer than 3 moves
+    Ultimate Fast Gambler with Repetition Detection.
     """
-
-    global nextMove
+    global nextMove, gameHistory
     nextMove = None
+
+    # Record current position in game history
+    key = _board_key(gs)
+    gameHistory[key] = gameHistory.get(key, 0) + 1
 
     # Safety check - if no valid moves, return None
     if not validMoves:
@@ -211,10 +250,10 @@ def findBestMove(gs, validMoves, returnQueue=None):
 
     turnMultiplier = 1 if gs.whiteToMove else -1
 
-    # Clear cache each move
+    # Clear cache each move (but keep gameHistory)
     transTable.clear()
 
-    # ---- FULL SEARCH ----
+    # ---- FULL SEARCH WITH REPETITION DETECTION ----
     try:
         findMoveNegaMaxAlphaBeta(
             gs,
@@ -222,7 +261,8 @@ def findBestMove(gs, validMoves, returnQueue=None):
             DEPTH,
             -CHECKMATE,
             CHECKMATE,
-            turnMultiplier
+            turnMultiplier,
+            search_history={}  # Fresh search path history
         )
     except Exception as e:
         print(f"⚠️ Gambler search error: {e}")
@@ -283,3 +323,10 @@ def findBestMove(gs, validMoves, returnQueue=None):
         returnQueue.put(chosen)
 
     return chosen
+
+
+def notify_undo(gs):
+    """Call this when a move is undone so gameHistory stays accurate."""
+    key = _board_key(gs)
+    if gameHistory.get(key, 0) > 0:
+        gameHistory[key] -= 1
