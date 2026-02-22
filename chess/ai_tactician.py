@@ -66,12 +66,7 @@ def scoreBoard(gs):
     """
     # Check for game-ending positions
     if gs.checkmate:
-        if gs.whiteToMove:
-            gs.checkmate = False
-            return -CHECKMATE  # Black wins
-        else:
-            gs.checkmate = False
-            return CHECKMATE  # White wins
+        return -CHECKMATE if gs.whiteToMove else CHECKMATE
     elif gs.stalemate:
         return STALEMATE
 
