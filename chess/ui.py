@@ -474,7 +474,7 @@ def ask_bvb_personalities(screen):
                 p.draw.rect(screen, p.Color(*light_color), white_rect)
                 p.draw.rect(screen, p.Color("black"), white_rect, 2)
             
-            name_text = font.render(personality_name, True, p.Color("white"))
+            name_text = font.render(personality_name, True, p.Color("#533022"))
             screen.blit(name_text, (white_x + button_width//2 - name_text.get_width()//2, white_y + 20))
             
             desc_text = desc_font.render(personality_data["description"], True, p.Color("white"))
@@ -496,7 +496,7 @@ def ask_bvb_personalities(screen):
                 p.draw.rect(screen, p.Color(*light_color), black_rect)
                 p.draw.rect(screen, p.Color("black"), black_rect, 2)
             
-            name_text = font.render(personality_name, True, p.Color("white"))
+            name_text = font.render(personality_name, True, p.Color("#533022"))
             screen.blit(name_text, (black_x + button_width//2 - name_text.get_width()//2, black_y + 20))
             
             desc_text = desc_font.render(personality_data["description"], True, p.Color("white"))
@@ -593,7 +593,7 @@ def ask_ai_personality(screen):
                 p.draw.rect(screen, p.Color("black"), button_rect, 2)
             
             # Draw personality name
-            name_text = title_font.render(personality_name, True, p.Color(100, 100, 100))
+            name_text = title_font.render(personality_name, True, p.Color("#74432F"))
             name_rect = name_text.get_rect(center=(x + button_width//2, y + 30))
             screen.blit(name_text, name_rect)
             
@@ -858,83 +858,157 @@ def set_flip_board(value):
 
 
 def draw_ai_debug_info(screen, gs, ai_personality, white_bot, black_bot,
-                       time_left=None, human_turn=False, 
+                       time_left=None, human_turn=False,
                        white_ai_personality=None, black_ai_personality=None):
     """
-    Draw AI evaluation debug info panel with timer on top, horizontally centered.
-    Timer updates every frame for human turns.
+    Draw AI evaluation debug info panel.
+    - BvB mode: two cards side by side, no timer
+    - PvB mode: single card with timer for human turns (unchanged)
     """
-    # Determine which personality to display
+
+    # BVB MODE
+    if white_bot and black_bot and white_ai_personality and black_ai_personality:
+
+        font      = p.font.SysFont("Courier New", 11)
+        bold_font = p.font.SysFont("Arial", 13, bold=True)
+
+        card_width  = 140
+        card_height = 120
+        spacing     = 8
+
+        total_width = card_width * 2 + spacing
+        panel_x     = BOARD_WIDTH + (MOVE_LOG_PANEL_WIDTH - total_width) // 2
+        card_y      = BOARD_HEIGHT - 200
+
+        def draw_card(x, personality_name, is_white_side):
+            card_rect = p.Rect(x, card_y, card_width, card_height)
+            p.draw.rect(screen, p.Color(250, 250, 250), card_rect)
+            border_color = p.Color("lightgray") if is_white_side else p.Color("dimgray")
+            p.draw.rect(screen, border_color, card_rect, 3)
+
+            # Which AI module
+            if personality_name == "Fortress":
+                import ai_fortress
+                raw_score = ai_fortress.scoreBoard(gs)
+                depth     = ai_fortress.DEPTH
+                traits    = ["King Safety", "Pawn +30%"]
+            elif personality_name == "Prophet":
+                import ai_prophet
+                raw_score = ai_prophet.scoreBoard(gs)
+                depth     = ai_prophet.DEPTH
+                traits    = ["Deep Search", "Positional"]
+            elif personality_name == "Gambler":
+                import ai_gambler
+                raw_score = getattr(ai_gambler, 'scoreBoard', lambda x: 0)(gs)
+                depth     = getattr(ai_gambler, 'DEPTH', 4)
+                traits    = ["Probabilistic", "Aggressive"]
+            elif personality_name == "Tactician":
+                import ai_tactician
+                raw_score = getattr(ai_tactician, 'scoreBoard', lambda x: 0)(gs)
+                depth     = getattr(ai_tactician, 'DEPTH', 3)
+                traits    = ["Short-term", "Cap x1.5"]
+            else:
+                return card_rect
+
+            # Score from this bot's perspective
+            score = raw_score if is_white_side else -raw_score
+
+            # Side label
+            side_label = "WHITE" if is_white_side else "BLACK"
+            side_color = p.Color("black") if is_white_side else p.Color("dimgray")
+            side_text  = p.font.SysFont("Arial", 10, bold=True).render(side_label, True, side_color)
+            screen.blit(side_text, (x + card_width//2 - side_text.get_width()//2, card_y + 4))
+
+            # Personality name
+            name_text = bold_font.render(personality_name, True, p.Color("darkblue"))
+            screen.blit(name_text, (x + card_width//2 - name_text.get_width()//2, card_y + 18))
+
+            # Depth
+            depth_color = p.Color("purple") if depth >= 5 else (p.Color("red") if depth <= 3 else p.Color("blue"))
+            depth_text  = font.render(f"DEPTH:{depth}", True, depth_color)
+            screen.blit(depth_text, (x + 6, card_y + 38))
+
+            # Eval
+            eval_color = p.Color("green") if score > 0 else (p.Color("red") if score < 0 else p.Color("gray"))
+            eval_text  = font.render(f"{score:+.2f}", True, eval_color)
+            screen.blit(eval_text, (x + 6, card_y + 52))
+
+            # Traits
+            y_off = card_y + 68
+            for trait in traits[:2]:
+                t = font.render(trait, True, p.Color("black"))
+                screen.blit(t, (x + 6, y_off))
+                y_off += 14
+
+            # Highlight whose turn it is
+            if (is_white_side and gs.whiteToMove) or (not is_white_side and not gs.whiteToMove):
+                p.draw.rect(screen, p.Color("gold"), card_rect, 3)
+
+            return card_rect
+
+        white_card = draw_card(panel_x, white_ai_personality, is_white_side=True)
+        black_card = draw_card(panel_x + card_width + spacing, black_ai_personality, is_white_side=False)
+
+        # Return a rect that covers both cards so buttons sit below them correctly
+        combined_rect = p.Rect(panel_x, card_y, total_width, card_height)
+        return combined_rect
+
     current_personality = None
-    
-    if white_ai_personality and black_ai_personality:
-        # Bot vs Bot mode - show the bot whose turn it is
-        current_personality = white_ai_personality if gs.whiteToMove else black_ai_personality
-    elif ai_personality:
-        # Single bot mode
+    if ai_personality:
         current_personality = ai_personality
-    
-    # If no bot is playing and it's not human turn, don't show anything
+
     if not current_personality and not human_turn:
         return None
 
     try:
-        font = p.font.SysFont("Courier New", 11)
+        font      = p.font.SysFont("Courier New", 11)
         bold_font = p.font.SysFont("Arial", 14, bold=True)
-        panel_width = 230
+        panel_width  = 230
         panel_height = 120
-        debug_y = BOARD_HEIGHT - 200  # vertical base
+        debug_y      = BOARD_HEIGHT - 200
 
-        # --- Horizontal center the panel in the MOVE_LOG_PANEL ---
-        panel_x = BOARD_WIDTH + (MOVE_LOG_PANEL_WIDTH - panel_width) // 2
+        panel_x    = BOARD_WIDTH + (MOVE_LOG_PANEL_WIDTH - panel_width) // 2
         debug_rect = p.Rect(panel_x, debug_y, panel_width, panel_height)
 
-        # Draw panel background and border
         p.draw.rect(screen, p.Color(250, 250, 250), debug_rect)
         p.draw.rect(screen, p.Color("darkblue"), debug_rect, 2)
 
-        # --- Timer on top for human turns ---
+        # --- Timer (human turns only) — completely unchanged ---
         if human_turn and time_left is not None:
-            timer_font = p.font.SysFont("Arial", 20, True)
-
+            timer_font   = p.font.SysFont("Arial", 20, True)
             display_time = int(time_left)
-
-            timer_text = timer_font.render(
+            timer_text   = timer_font.render(
                 f"Time: {display_time}s",
                 True,
                 p.Color("red") if display_time <= 5 else p.Color("black")
             )
-
-            # Position inside debug panel
             screen.blit(timer_text, (debug_rect.x + 10, debug_rect.y + 10))
 
-        # --- AI info below timer ---
+        # --- AI info ---
         if current_personality:
-            # Load AI evaluation
             if current_personality == "Fortress":
                 import ai_fortress
                 raw_score = ai_fortress.scoreBoard(gs)
-                depth = ai_fortress.DEPTH
-                traits = ["🛡️ King Safety: HIGH", "♟️ Pawn Value: +30%"]
+                depth     = ai_fortress.DEPTH
+                traits    = ["🛡️ King Safety: HIGH", "♟️ Pawn Value: +30%"]
             elif current_personality == "Prophet":
                 import ai_prophet
                 raw_score = ai_prophet.scoreBoard(gs)
-                depth = ai_prophet.DEPTH
-                traits = ["🔮 Deep Thinking", "📍 Position: x3"]
+                depth     = ai_prophet.DEPTH
+                traits    = ["🔮 Deep Thinking", "📍 Position: x3"]
             elif current_personality == "Gambler":
                 import ai_gambler
                 raw_score = getattr(ai_gambler, 'scoreBoard', lambda x: 0)(gs)
-                depth = getattr(ai_gambler, 'DEPTH', 4)
-                traits = ["🎲 Probabilistic", "⚔️ Aggressive"]
+                depth     = getattr(ai_gambler, 'DEPTH', 4)
+                traits    = ["🎲 Probabilistic", "⚔️ Aggressive"]
             elif current_personality == "Tactician":
                 import ai_tactician
                 raw_score = getattr(ai_tactician, 'scoreBoard', lambda x: 0)(gs)
-                depth = getattr(ai_tactician, 'DEPTH', 3)
-                traits = ["⚔️ Short-term", "💥 Captures: x1.5"]
+                depth     = getattr(ai_tactician, 'DEPTH', 3)
+                traits    = ["⚔️ Short-term", "💥 Captures: x1.5"]
             else:
                 return debug_rect
 
-            # Adjust score based on bot/human
             if white_bot and not black_bot:
                 score = -raw_score
             elif black_bot and not white_bot:
@@ -942,16 +1016,16 @@ def draw_ai_debug_info(screen, gs, ai_personality, white_bot, black_bot,
             else:
                 score = raw_score
 
-            content_y = debug_rect.y + 30
-            title = bold_font.render(f"{current_personality} AI", True, p.Color("darkblue"))
+            content_y  = debug_rect.y + 30
+            title      = bold_font.render(f"{current_personality} AI", True, p.Color("darkblue"))
             screen.blit(title, (debug_rect.x + 10, content_y))
 
             depth_color = p.Color("purple") if depth >= 5 else (p.Color("red") if depth <= 3 else p.Color("blue"))
-            depth_text = font.render(f"Depth: {depth} moves", True, depth_color)
+            depth_text  = font.render(f"Depth: {depth} moves", True, depth_color)
             screen.blit(depth_text, (debug_rect.x + 10, content_y + 20))
 
             eval_color = p.Color("green") if score > 0 else (p.Color("red") if score < 0 else p.Color("gray"))
-            eval_text = font.render(f"Eval: {score:.2f}", True, eval_color)
+            eval_text  = font.render(f"Eval: {score:.2f}", True, eval_color)
             screen.blit(eval_text, (debug_rect.x + 10, content_y + 38))
 
             y_offset = content_y + 56
@@ -965,7 +1039,6 @@ def draw_ai_debug_info(screen, gs, ai_personality, white_bot, black_bot,
     except Exception as e:
         print("Error in draw_ai_debug_info:", e)
         return None
-
 
 def draw_game_menu_buttons(screen, debug_rect):
     """Draw Start and Quit buttons in a horizontal row below debug panel, centered."""

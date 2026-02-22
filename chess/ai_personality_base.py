@@ -1,15 +1,20 @@
 """
-Base configuration and shared utilities for AI personalities (OPTIMIZED v2)
+Base configuration and shared utilities for AI personalities.
+
+This file contains:
+- Original piece-square tables from chessAi.py
+- Shared constants (CHECKMATE, STALEMATE)
+- Helper functions used by all personalities
+
+Each personality imports from here and modifies what they need.
 """
 
 import random
-import time
 
-# CONSTANTS
 CHECKMATE = 1000
 STALEMATE = 0
 
-# BASE PIECE VALUES
+# ORIGINAL PIECE VALUES (baseline for all personalities)
 BASE_PIECE_SCORE = {
     "K": 0,
     "Q": 9,
@@ -19,7 +24,7 @@ BASE_PIECE_SCORE = {
     "p": 1
 }
 
-# PIECE-SQUARE TABLES
+# ORIGINAL PIECE-SQUARE TABLES (baseline for all personalities)
 knightScores = [
     [1, 1, 1, 1, 1, 1, 1, 1],
     [1, 2, 2, 2, 2, 2, 2, 1],
@@ -95,86 +100,7 @@ BASE_PIECE_POSITION_SCORES = {
     "bp": blackPawnScores
 }
 
-# TRANSPOSITION TABLE
-class TranspositionTable:
-    """Improved cache with proper position hashing."""
-    def __init__(self, max_size=100000):
-        self.table = {}
-        self.max_size = max_size
-    
-    def get(self, position_hash, depth):
-        key = (position_hash, depth)
-        return self.table.get(key, None)
-    
-    def store(self, position_hash, depth, score):
-        if len(self.table) >= self.max_size:
-            keys_to_remove = list(self.table.keys())[:self.max_size // 2]
-            for key in keys_to_remove:
-                del self.table[key]
-        
-        key = (position_hash, depth)
-        self.table[key] = score
-    
-    def clear(self):
-        self.table.clear()
-
-def get_position_hash(gs):
-    """
-    IMPROVED hash that includes:
-    - Board position
-    - Side to move
-    - Castling rights
-    - En passant square
-    """
-    board_string = ""
-    for row in gs.board:
-        for square in row:
-            board_string += square
-    
-    # Add side to move
-    board_string += "W" if gs.whiteToMove else "B"
-    
-    # Add castling rights
-    board_string += ("K" if gs.whiteCastleKingside else "-")
-    board_string += ("Q" if gs.whiteCastleQueenside else "-")
-    board_string += ("k" if gs.blackCastleKingside else "-")
-    board_string += ("q" if gs.blackCastleQueenside else "-")
-    
-    # Add en passant
-    if gs.enpasantPossible:
-        board_string += f"ep{gs.enpasantPossible[0]}{gs.enpasantPossible[1]}"
-    
-    return hash(board_string)
-
-# MOVE ORDERING
-def order_moves(moves, piece_scores):
-    """
-    Order moves for better alpha-beta pruning.
-    
-    Priority:
-    1. Pawn promotions (huge value)
-    2. Captures of valuable pieces
-    3. Other captures
-    4. Quiet moves
-    """
-    def move_score(move):
-        score = 0
-        
-        # Pawn promotion
-        if move.isPawnPromotion:
-            score += 100
-        
-        # Captures
-        if move.pieceCaptured != '--':
-            # MVV-LVA: Most Valuable Victim - Least Valuable Attacker
-            victim_value = piece_scores[move.pieceCaptured[1]]
-            attacker_value = piece_scores[move.pieceMoved[1]]
-            score += 10 * victim_value - attacker_value
-        
-        return score
-    
-    return sorted(moves, key=move_score, reverse=True)
-
 # HELPER FUNCTIONS
 def findRandomMoves(validMoves):
+    """Pick a random move from valid moves (fallback)."""
     return validMoves[random.randint(0, len(validMoves) - 1)]

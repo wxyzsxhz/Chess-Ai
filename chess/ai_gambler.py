@@ -187,7 +187,7 @@ def findMoveNegaMaxAlphaBeta(gs, validMoves, depth, alpha, beta, turnMultiplier)
 
 
 # ============================================================================
-# MAIN GAMBLER MOVE (FAST ROOT ONLY)
+# MAIN GAMBLER MOVE (FAST ROOT ONLY) - FIXED VERSION
 # ============================================================================
 
 def findBestMove(gs, validMoves, returnQueue=None):
@@ -197,10 +197,17 @@ def findBestMove(gs, validMoves, returnQueue=None):
     ✅ Depth 4 AlphaBeta Search ONCE
     ✅ Always returns a real move
     ✅ Randomness only among top candidates
+    ✅ Handles cases with fewer than 3 moves
     """
 
     global nextMove
     nextMove = None
+
+    # Safety check - if no valid moves, return None
+    if not validMoves:
+        if returnQueue:
+            returnQueue.put(None)
+        return None
 
     turnMultiplier = 1 if gs.whiteToMove else -1
 
@@ -208,43 +215,67 @@ def findBestMove(gs, validMoves, returnQueue=None):
     transTable.clear()
 
     # ---- FULL SEARCH ----
-    findMoveNegaMaxAlphaBeta(
-        gs,
-        validMoves,
-        DEPTH,
-        -CHECKMATE,
-        CHECKMATE,
-        turnMultiplier
-    )
+    try:
+        findMoveNegaMaxAlphaBeta(
+            gs,
+            validMoves,
+            DEPTH,
+            -CHECKMATE,
+            CHECKMATE,
+            turnMultiplier
+        )
+    except Exception as e:
+        print(f"⚠️ Gambler search error: {e}")
+        nextMove = None
 
-    # ✅ SAFETY: If search failed, fallback
+    # ✅ SAFETY: If search failed, fallback to random
     if nextMove is None:
         print("⚠️ Gambler fallback: random move")
         finalMove = random.choice(validMoves)
+
+        print("\n🎲 Gambler Final Choice (Fallback):")
+        print(f"  1. {finalMove} ✓ CHOSEN (random)")
 
         if returnQueue:
             returnQueue.put(finalMove)
         return finalMove
 
     # ---- GAMBLER RANDOMNESS ----
-    # Pick from best + 2 random alternatives
+    # Pick from best + random alternatives
     topMoves = [nextMove]
 
+    # Add up to 2 random unique moves
     random.shuffle(validMoves)
     for m in validMoves:
-        if m != nextMove:
+        if m != nextMove and m not in topMoves:
             topMoves.append(m)
-        if len(topMoves) == 3:
+        if len(topMoves) >= 3:  # Stop when we have 3 moves
             break
 
-    # Probabilities
+    # Adjust weights based on how many moves we actually have
+    move_count = len(topMoves)
+    
+    if move_count == 1:
+        # Only one move available
+        weights = [1.0]
+    elif move_count == 2:
+        # Two moves available
+        weights = [0.75, 0.25]
+    else:  # move_count >= 3
+        # Three or more moves available - use top 3 with standard weights
+        weights = [0.65, 0.25, 0.10]
+        # If we somehow got more than 3, trim to 3
+        if move_count > 3:
+            topMoves = topMoves[:3]
+
+    # Choose randomly based on weights
     chosen = random.choices(
         topMoves,
-        weights=[0.65, 0.25, 0.10]
+        weights=weights
     )[0]
 
     print("\n🎲 Gambler Final Choice:")
-    for i, m in enumerate(topMoves):
+    for i, m in enumerate(topMoves[:3]):  # Only show up to 3
         mark = "✓ CHOSEN" if m == chosen else ""
         print(f"  {i+1}. {m} {mark}")
 

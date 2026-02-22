@@ -71,6 +71,29 @@ def animate_move(move, screen, board, clock, flip_board, sound_manager, light_co
         p.display.flip()
         clock.tick(240)
 
+def get_position_hash(gs):
+    # Board state
+    board_str = gs.getBoardString()
+    
+    # Whose turn
+    turn_str = "W" if gs.whiteToMove else "B"
+    
+    # Castling rights
+    castling_str = ""
+    castling_str += "K" if gs.whiteCastleKingside else "-"
+    castling_str += "Q" if gs.whiteCastleQueenside else "-"
+    castling_str += "k" if gs.blackCastleKingside else "-"
+    castling_str += "q" if gs.blackCastleQueenside else "-"
+    
+    # En passant square (if available)
+    en_passant_str = ""
+    if gs.enpasantPossible:
+        en_passant_str = f"{gs.enpasantPossible[0]},{gs.enpasantPossible[1]}"
+    
+    # Combine all into one unique string
+    position_hash = f"{board_str}|{turn_str}|{castling_str}|{en_passant_str}"
+    
+    return position_hash
 
 def main():
     global LIGHT_SQUARE_COLOR, DARK_SQUARE_COLOR
@@ -176,14 +199,11 @@ def main():
     turn_start_time = p.time.get_ticks()  # milliseconds
     time_left = TURN_TIME_LIMIT
 
+    position_count = {}  # Dictionary: position_hash -> count
     
     # Draw tracking
-    position_history = ""
-    previous_pos = ""
-    count_moves = 0
     draw_count = 0
-    timer_font = p.font.SysFont("Arial", 20, True)
-    
+
     # Suggestion system for human players
     suggestion_move = None
     suggestion_requested = False
@@ -237,7 +257,44 @@ def main():
                     # AI personality
                     ai_personality = None
                     findBestMove = None
-                    if white_bot or black_bot:
+                    white_ai_personality = None
+                    black_ai_personality = None
+                    findBestMove_white = None
+                    findBestMove_black = None
+
+                    if white_bot and black_bot:
+                        from ui import ask_bvb_personalities
+                        white_ai_personality, black_ai_personality = ask_bvb_personalities(screen)
+
+                        if white_ai_personality == "Fortress":
+                            import ai_fortress
+                            findBestMove_white = ai_fortress.findBestMove
+                        elif white_ai_personality == "Prophet":
+                            import ai_prophet
+                            findBestMove_white = ai_prophet.findBestMove
+                        elif white_ai_personality == "Gambler":
+                            import ai_gambler
+                            findBestMove_white = ai_gambler.findBestMove
+                        elif white_ai_personality == "Tactician":
+                            import ai_tactician
+                            findBestMove_white = ai_tactician.findBestMove
+
+                        if black_ai_personality == "Fortress":
+                            import ai_fortress as ai_fortress_black
+                            findBestMove_black = ai_fortress_black.findBestMove
+                        elif black_ai_personality == "Prophet":
+                            import ai_prophet as ai_prophet_black
+                            findBestMove_black = ai_prophet_black.findBestMove
+                        elif black_ai_personality == "Gambler":
+                            import ai_gambler as ai_gambler_black
+                            findBestMove_black = ai_gambler_black.findBestMove
+                        elif black_ai_personality == "Tactician":
+                            import ai_tactician as ai_tactician_black
+                            findBestMove_black = ai_tactician_black.findBestMove
+
+                        print(f"✓ WHITE: {white_ai_personality} vs BLACK: {black_ai_personality}")
+
+                    elif white_bot or black_bot:
                         from ui import ask_ai_personality
                         ai_personality = ask_ai_personality(screen)
                         if ai_personality == "Fortress":
@@ -264,10 +321,9 @@ def main():
                     suggestion_move = None
                     suggestion_requested = False
                     turn_start_time = p.time.get_ticks()
-                    position_history = ""
-                    previous_pos = ""
-                    count_moves = 0
                     draw_count = 0
+                    position_count = {}
+
 
                 elif quit_btn and quit_btn.collidepoint(mouse_pos):
                     p.quit()
@@ -323,9 +379,27 @@ def main():
                 move_undone = False
 
             elif e.type == p.KEYDOWN:
-                if e.key == p.K_z and not game_over:  # Undo - only if game not over
+                if e.key == p.K_z and not game_over:
+                    if gs.moveLog:
+                        current_position = get_position_hash(gs)
+                        if current_position in position_count and position_count[current_position] > 0:
+                            position_count[current_position] -= 1
+
                     gs.undoMove()
-                    move_made = True
+                    valid_moves = gs.getValidMoves()
+
+                    try:
+                        if 'ai_prophet' in sys.modules:
+                            import ai_prophet
+                            ai_prophet.notify_undo(gs)
+                    except:
+                        pass
+
+                    if move_finder_process and move_finder_process.is_alive():
+                        move_finder_process.terminate()
+                        move_finder_process = None
+                    ai_thinking = False
+                    move_made = False
                     animate = False
                     game_over = False
                     suggestion_move = None
@@ -334,6 +408,10 @@ def main():
                     turn_start_time = p.time.get_ticks()
 
                 elif e.key == p.K_r:  # Reset
+                    if move_finder_process and move_finder_process.is_alive():
+                        move_finder_process.terminate()
+                        move_finder_process = None
+                    ai_thinking = False
                     gs = GameState()
                     valid_moves = gs.getValidMoves()
                     square_selected = ()
@@ -344,10 +422,8 @@ def main():
                     suggestion_move = None
                     suggestion_requested = False
                     turn_start_time = p.time.get_ticks()
-                    position_history = ""
-                    previous_pos = ""
-                    count_moves = 0
                     draw_count = 0
+                    position_count = {}
 
         # ===============================
         # UPDATE TIMER EVERY FRAME
@@ -390,8 +466,7 @@ def main():
                 gs.makeMove(ai_move)
                 
                 if ai_move.isPawnPromotion:
-                    promotion = pawn_promotion_popup(screen, gs)
-                    gs.board[ai_move.endRow][ai_move.endCol] = ai_move.pieceMoved[0] + promotion
+                    gs.board[ai_move.endRow][ai_move.endCol] = ai_move.pieceMoved[0] + 'Q'
                     sound_manager.play_promote()
                     piece_captured = False
                 
@@ -442,27 +517,26 @@ def main():
                         
         # Update game state after move
         if move_made:
-            # Draw detection
-            if count_moves < 4:
-                count_moves += 1
-            if count_moves == 4:
-                position_history += gs.getBoardString()
-                if previous_pos == position_history:
-                    draw_count += 1
-                    position_history = ""
-                    count_moves = 0
-                else:
-                    previous_pos = position_history
-                    position_history = ""
-                    count_moves = 0
-                    draw_count = 0
-            
             if animate:
                 animate_move(gs.moveLog[-1], screen, gs.board, clock, flip_board, sound_manager,
                         LIGHT_SQUARE_COLOR, DARK_SQUARE_COLOR, selected_board)
             
             # UPDATE VALID MOVES AFTER THE MOVE
             valid_moves = gs.getValidMoves()
+            
+            # NEW: Track position for 3-fold repetition
+            current_position = get_position_hash(gs)
+            
+            # Increment count for this position
+            if current_position in position_count:
+                position_count[current_position] += 1
+            else:
+                position_count[current_position] = 1
+            
+            # Check for 3-fold repetition
+            if position_count[current_position] >= 3:
+                game_over = True
+                print(f"Draw by 3-fold repetition! Position occurred {position_count[current_position]} times.")
             
             # Check if game is over after the move
             if len(valid_moves) == 0:
@@ -506,34 +580,35 @@ def main():
         # DRAW GAME OVER TEXT
         # ===============================
         if game_over:
+            text = 'Game Over!'  # Default
+
             if gs.checkmate:
                 # Determine who won
                 if gs.whiteToMove:
-                    # If it's white's turn but game is over, white is in checkmate -> black won
-                    winner = "Black"
+                    winner = "Black"  # White is in checkmate
                 else:
-                    # If it's black's turn but game is over, black is in checkmate -> white won
-                    winner = "White"
+                    winner = "White"  # Black is in checkmate
                 
-                # Customize message based on who the player is controlling
-                if (winner == "Black" and not white_bot and black_bot) or \
-                (winner == "White" and white_bot and not black_bot):
-                    # Player won (they are controlling the winning side)
-                    text = "You win by checkmate!"
-                elif (winner == "Black" and white_bot and not black_bot) or \
-                    (winner == "White" and not white_bot and black_bot):
-                    # Player lost (they are controlling the losing side)
-                    text = "You lose by checkmate!"
-                else:
-                    # Bot vs bot or unclear situation
+                # Determine message based on game mode
+                if white_bot and black_bot:
+                    # Bot vs Bot - just show winner
                     text = f'{winner} wins by checkmate!'
-                    
+                elif not white_bot and not black_bot:
+                    # Player vs Player
+                    text = f'{winner} wins by checkmate!'
+                else:
+                    # Player vs Bot - personalize message
+                    if (winner == "White" and not white_bot) or (winner == "Black" and not black_bot):
+                        # Human is playing as the winner
+                        text = "You win by checkmate!"
+                    else:
+                        # Human is playing as the loser
+                        text = "You lose by checkmate!"
+                        
             elif gs.stalemate:
                 text = 'Stalemate!'
-            elif draw_count == 1:
+            elif any(count >= 3 for count in position_count.values()):
                 text = 'Draw by repetition!'
-            else:
-                text = 'Game Over!'
             
             # Draw semi-transparent overlay
             overlay = p.Surface((BOARD_WIDTH, BOARD_HEIGHT))
@@ -554,7 +629,7 @@ def main():
             
             # Also show smaller instruction
             small_font = p.font.SysFont("Arial", 20, False, False)
-            restart_text = small_font.render("Click START to play again", True, p.Color("white"))
+            restart_text = small_font.render("Click RESTART to play again", True, p.Color("white"))
             restart_rect = restart_text.get_rect(center=(BOARD_WIDTH // 2, BOARD_HEIGHT // 2 + 50))
             screen.blit(restart_text, restart_rect)
 
